@@ -12,7 +12,7 @@ import zlib
 /// 这里只实现解析需要的 wire format 子集：varint、fixed32（float）、
 /// length-delimited（string / bytes / 嵌套 message）。不引入 protobuf 运行时，
 /// 因为 schema 固定且字段很少。
-struct MovenProtoReader {
+struct LspAgProtoReader {
     /// 转为零起点字节数组，统一索引与边界计算，不依赖原始 Data 是否为切片。
     private let bytes: [UInt8]
     /// 下一次读取的位置；每个读取方法都负责推进，发生错误时直接移到末尾。
@@ -123,7 +123,7 @@ struct MovenProtoReader {
 // MARK: - 模型
 
 /// 文件画布及时间轴参数。画布尺寸是动画逻辑坐标，不是屏幕尺寸或当前 UIView 的尺寸。
-public struct MovenSVGAParams: Equatable, Sendable {
+public struct LspAgSVGAParams: Equatable, Sendable {
     public internal(set) var viewBoxWidth: Double = 0
     public internal(set) var viewBoxHeight: Double = 0
     public internal(set) var fps: Int = 20
@@ -136,21 +136,21 @@ public struct MovenSVGAParams: Equatable, Sendable {
 }
 
 /// 保留原始 layout 字段。当前图片目标矩形从局部坐标 (0, 0) 开始，平移使用 frame transform。
-public struct MovenSVGALayout: Equatable, Sendable {
+public struct LspAgSVGALayout: Equatable, Sendable {
     var x: Double = 0, y: Double = 0, width: Double = 0, height: Double = 0
 }
 
 /// 与 CGAffineTransform 对应的二维矩阵：a / b / c / d 表示线性变换，tx / ty 表示平移。
 /// 本地模型默认单位矩阵；可选 transform 为 nil 时表示文件没有提供这一层变换。
-public struct MovenSVGATransform: Equatable, Sendable {
+public struct LspAgSVGATransform: Equatable, Sendable {
     var a: Double = 1, b: Double = 0, c: Double = 0, d: Double = 1, tx: Double = 0, ty: Double = 0
 
     var affine: CGAffineTransform { CGAffineTransform(a: a, b: b, c: c, d: d, tx: tx, ty: ty) }
-    var isIdentity: Bool { self == MovenSVGATransform() }
+    var isIdentity: Bool { self == LspAgSVGATransform() }
 }
 
 /// 保存文件中的 RGBA 浮点分量，正常资源使用 0...1；透明度还会与所在帧的 alpha 相乘。
-public struct MovenSVGAColor: Equatable, Sendable {
+public struct LspAgSVGAColor: Equatable, Sendable {
     var r: Double = 0, g: Double = 0, b: Double = 0, a: Double = 0
 
     /// `frameAlpha` 与自身 alpha 相乘，对应 painter.dart 的 `Color.fromARGB(fill.a * frameAlpha, ...)`。
@@ -161,16 +161,16 @@ public struct MovenSVGAColor: Equatable, Sendable {
 
 /// 当前绘制器使用的填充 / 描边子集。可选颜色为 nil 与明确指定透明色含义不同。
 /// lineDash 按现有解析顺序收集并传给 CGContext，不代表已经实现全部 SVGA 描边样式语义。
-public struct MovenSVGAStyle: Equatable, Sendable {
-    var fill: MovenSVGAColor?
-    var stroke: MovenSVGAColor?
+public struct LspAgSVGAStyle: Equatable, Sendable {
+    var fill: LspAgSVGAColor?
+    var stroke: LspAgSVGAColor?
     var strokeWidth: Double = 0
     var miterLimit: Double = 0
     public internal(set) var lineDash: [Double] = []
 }
 
 /// 文件中的形状几何。KEEP 是预处理标记，本身不参与最终绘制。
-public enum MovenSVGAShapeKind: Equatable, Sendable {
+public enum LspAgSVGAShapeKind: Equatable, Sendable {
     case path(String)
     case rect(x: Double, y: Double, width: Double, height: Double, cornerRadius: Double)
     case ellipse(cx: Double, cy: Double, rx: Double, ry: Double)
@@ -179,30 +179,30 @@ public enum MovenSVGAShapeKind: Equatable, Sendable {
 }
 
 /// 一个形状由几何、样式、可选局部变换组成；形状变换叠加在所在 sprite 的帧变换之后。
-public struct MovenSVGAShape: Equatable, Sendable {
-    public internal(set) var kind: MovenSVGAShapeKind = .empty
-    public internal(set) var style = MovenSVGAStyle()
-    var transform: MovenSVGATransform?
+public struct LspAgSVGAShape: Equatable, Sendable {
+    public internal(set) var kind: LspAgSVGAShapeKind = .empty
+    public internal(set) var style = LspAgSVGAStyle()
+    var transform: LspAgSVGATransform?
 }
 
 /// 单个 sprite 在某一帧的内容；同一帧既可以画位图，也可以在位图上继续画矢量形状。
 /// alpha 缺省为 1，clipPath 在应用帧变换后裁剪该 sprite 的图片和所有形状。
-public struct MovenSVGAFrame: Equatable, Sendable {
+public struct LspAgSVGAFrame: Equatable, Sendable {
     var alpha: Double = 1
-    var layout = MovenSVGALayout()
-    var transform: MovenSVGATransform?
+    var layout = LspAgSVGALayout()
+    var transform: LspAgSVGATransform?
     public internal(set) var clipPath: String = ""
-    public internal(set) var shapes: [MovenSVGAShape] = []
+    public internal(set) var shapes: [LspAgSVGAShape] = []
 }
 
 /// 一个按时间变化的图层。sprites 的数组顺序决定绘制顺序，不按 imageKey 排序。
-public struct MovenSVGASprite: Equatable, Sendable {
+public struct LspAgSVGASprite: Equatable, Sendable {
     /// 用于从 movie.images 查位图；纯形状图层也可能有 key 但没有对应位图。
     public internal(set) var imageKey: String = ""
-    public internal(set) var frames: [MovenSVGAFrame] = []
+    public internal(set) var frames: [LspAgSVGAFrame] = []
 
     /// 取当前帧；越界时回退到最后一帧，避免短动画在长 sprite 上闪空。
-    func frame(at index: Int) -> MovenSVGAFrame? {
+    func frame(at index: Int) -> LspAgSVGAFrame? {
         guard !frames.isEmpty else { return nil }
         return frames[min(max(index, 0), frames.count - 1)]
     }
@@ -212,10 +212,10 @@ public struct MovenSVGASprite: Equatable, Sendable {
 /// UIKit 仍可能在显示阶段准备位图；这里不承诺 UIImage(data:) 已完成全部像素解码。
 /// @unchecked Sendable 用于跨后台解析任务传递结果；调用方应将已发布结果作为资源快照使用，
 /// 不要在不同执行器共享并修改其中的引用对象。普通模型和数组本身采用值语义。
-public struct MovenSVGAMovie: @unchecked Sendable {
+public struct LspAgSVGAMovie: @unchecked Sendable {
     public internal(set) var version: String = ""
-    public internal(set) var params = MovenSVGAParams()
-    public internal(set) var sprites: [MovenSVGASprite] = []
+    public internal(set) var params = LspAgSVGAParams()
+    public internal(set) var sprites: [LspAgSVGASprite] = []
     public internal(set) var images: [String: UIImage] = [:]
     /// 音频资源（mp3）原样保留；尚未实现音频时间轴、播放或与视频帧同步。
     public internal(set) var audios: [String: Data] = [:]
@@ -231,7 +231,7 @@ public struct MovenSVGAMovie: @unchecked Sendable {
 
 /// 解析层错误，不直接决定礼物队列是否继续；SwiftUI 包装层将加载失败汇入完成回调。
 /// decodeFailed 预留图片失败描述，当前 parseMovie 对无法构造 UIImage 的单项资源直接跳过。
-public enum MovenSVGAError: LocalizedError {
+public enum LspAgSVGAError: LocalizedError {
     case inflateFailed
     case invalidMovie
     case decodeFailed(String)
@@ -250,16 +250,16 @@ public enum MovenSVGAError: LocalizedError {
 /// 流程与 Flutter 一致：zlib 解压 → 解析 `MovieEntity` → 把 `images` 里的
 /// `mp3` 分到音频、其余解码成位图 → 处理 `KEEP` 形状继承。
 /// 这些方法不切换执行器；调用方负责后台调度，避免在 SwiftUI 更新或主线程直接解析大文件。
-public enum MovenSVGAParser {
+public enum LspAgSVGAParser {
     /// 只返回可播放的电影：必须有正数帧和画布尺寸，帧率 / 帧数需落在支持范围。
     /// 零帧率保留给 `effectiveFPS` 使用默认值；KEEP 形状在校验后统一继承。
-    public static func decode(_ data: Data) throws -> MovenSVGAMovie {
+    public static func decode(_ data: Data) throws -> LspAgSVGAMovie {
         let inflated = try inflate(data)
         var movie = try parseMovie(inflated)
         guard movie.params.frames > 0, movie.params.frames <= Int32.max,
               movie.params.fps >= 0, movie.params.fps <= Int32.max,
               movie.params.viewBoxWidth > 0, movie.params.viewBoxHeight > 0 else {
-            throw MovenSVGAError.invalidMovie
+            throw LspAgSVGAError.invalidMovie
         }
         movie.sprites = movie.sprites.map(inheritingKeepShapes)
         return movie
@@ -273,7 +273,7 @@ public enum MovenSVGAParser {
     /// 继续读取。压缩流截断、校验和错误或后面附带额外数据时返回失败。
     static func inflate(_ data: Data) throws -> Data {
         let maximumInflatedSize = 64 * 1024 * 1024
-        guard !data.isEmpty, data.count <= maximumInflatedSize else { throw MovenSVGAError.inflateFailed }
+        guard !data.isEmpty, data.count <= maximumInflatedSize else { throw LspAgSVGAError.inflateFailed }
         // 根据 zlib 头部的压缩方法及校验规则选择带头模式；否则按裸 deflate 处理。
         let header = [UInt8](data.prefix(2))
         let wrapped = header.count == 2 && header[0] & 0x0F == 8 &&
@@ -281,7 +281,7 @@ public enum MovenSVGAParser {
         var stream = z_stream()
         guard inflateInit2_(&stream, wrapped ? MAX_WBITS : -MAX_WBITS,
                             ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else {
-            throw MovenSVGAError.inflateFailed
+            throw LspAgSVGAError.inflateFailed
         }
         // 正窗口位数验证 zlib 包装，负值只处理裸 deflate；无论成功或抛错都释放 zlib 内部状态。
         defer { inflateEnd(&stream) }
@@ -302,15 +302,15 @@ public enum MovenSVGAParser {
                     return (status, destination.count - Int(stream.avail_out))
                 }
                 // 先用减法比较剩余预算，再追加，避免容量相加溢出或先分配后发现超限。
-                guard result.count <= maximumInflatedSize - written else { throw MovenSVGAError.inflateFailed }
+                guard result.count <= maximumInflatedSize - written else { throw LspAgSVGAError.inflateFailed }
                 result.append(contentsOf: buffer.prefix(written))
                 if status == Z_STREAM_END {
-                    guard stream.avail_in == 0 else { throw MovenSVGAError.inflateFailed }
+                    guard stream.avail_in == 0 else { throw LspAgSVGAError.inflateFailed }
                     return result
                 }
                 // 未到流末尾但既没有消费输入也没有产生输出，说明无法继续解压。
                 guard status == Z_OK, written > 0 || stream.avail_in < previousInput else {
-                    throw MovenSVGAError.inflateFailed
+                    throw LspAgSVGAError.inflateFailed
                 }
             }
         }
@@ -319,9 +319,9 @@ public enum MovenSVGAParser {
     // MARK: MovieEntity
 
     /// 每层嵌套 message 都单独检查 reader 的错误状态，避免内层截断被当成空字段。
-    private static func parseMovie(_ data: Data) throws -> MovenSVGAMovie {
-        var movie = MovenSVGAMovie()
-        var reader = MovenProtoReader(data)
+    private static func parseMovie(_ data: Data) throws -> LspAgSVGAMovie {
+        var movie = LspAgSVGAMovie()
+        var reader = LspAgProtoReader(data)
         var rawImages: [String: Data] = [:]
 
         while let tag = reader.nextTag() {
@@ -342,7 +342,7 @@ public enum MovenSVGAParser {
             }
         }
 
-        guard !reader.isInvalid else { throw MovenSVGAError.invalidMovie }
+        guard !reader.isInvalid else { throw LspAgSVGAError.invalidMovie }
         // 图片 map 在全部 message 读取完后统一分流，字段顺序不影响 MP3 内容填充。
         // 单张图片解码失败不会使整部动画失败，其余 sprite / shape 仍可继续绘制。
         for (key, bytes) in rawImages {
@@ -356,9 +356,9 @@ public enum MovenSVGAParser {
     }
 
     /// MovieParams：fixed32 画布宽高，varint 帧率和总帧数；最终可播放性由 decode 统一校验。
-    private static func parseParams(_ data: Data) throws -> MovenSVGAParams {
-        var params = MovenSVGAParams()
-        var reader = MovenProtoReader(data)
+    private static func parseParams(_ data: Data) throws -> LspAgSVGAParams {
+        var params = LspAgSVGAParams()
+        var reader = LspAgProtoReader(data)
         while let tag = reader.nextTag() {
             switch (tag.field, tag.wire) {
             case (1, 5): params.viewBoxWidth = reader.readFloat()
@@ -368,14 +368,14 @@ public enum MovenSVGAParser {
             default: reader.skip(wire: tag.wire)
             }
         }
-        guard !reader.isInvalid else { throw MovenSVGAError.invalidMovie }
+        guard !reader.isInvalid else { throw LspAgSVGAError.invalidMovie }
         return params
     }
 
     /// protobuf 的 map 实际是重复的 entry message，字段 1 是 key，字段 2 是二进制内容。
     /// 相同 key 按后出现的值覆盖；空 key 不进入资源字典。
     private static func parseImageEntry(_ data: Data, into images: inout [String: Data]) throws {
-        var reader = MovenProtoReader(data)
+        var reader = LspAgProtoReader(data)
         var key = ""
         var value = Data()
         while let tag = reader.nextTag() {
@@ -385,14 +385,14 @@ public enum MovenSVGAParser {
             default: reader.skip(wire: tag.wire)
             }
         }
-        guard !reader.isInvalid else { throw MovenSVGAError.invalidMovie }
+        guard !reader.isInvalid else { throw LspAgSVGAError.invalidMovie }
         if !key.isEmpty { images[key] = value }
     }
 
     /// 当前只保留 AudioEntity 的资源 key，不解析开始 / 结束帧等音频播放信息。
     /// 字节内容仍由 images map 提供，这里用空 Data 占位，避免与资源内容存储重复。
-    private static func parseAudio(_ data: Data, into movie: inout MovenSVGAMovie) throws {
-        var reader = MovenProtoReader(data)
+    private static func parseAudio(_ data: Data, into movie: inout LspAgSVGAMovie) throws {
+        var reader = LspAgProtoReader(data)
         var key = ""
         while let tag = reader.nextTag() {
             switch (tag.field, tag.wire) {
@@ -400,15 +400,15 @@ public enum MovenSVGAParser {
             default: reader.skip(wire: tag.wire)
             }
         }
-        guard !reader.isInvalid else { throw MovenSVGAError.invalidMovie }
+        guard !reader.isInvalid else { throw LspAgSVGAError.invalidMovie }
         // 音频内容在 images 里（key 相同），这里只记录引用，避免重复拷贝。
         if !key.isEmpty { movie.audios[key] = movie.audios[key] ?? Data() }
     }
 
     /// SpriteEntity 的 key 与帧数组；逐帧保留输入顺序，不在这里扩展或补齐帧数。
-    private static func parseSprite(_ data: Data) throws -> MovenSVGASprite {
-        var sprite = MovenSVGASprite()
-        var reader = MovenProtoReader(data)
+    private static func parseSprite(_ data: Data) throws -> LspAgSVGASprite {
+        var sprite = LspAgSVGASprite()
+        var reader = LspAgProtoReader(data)
         while let tag = reader.nextTag() {
             switch (tag.field, tag.wire) {
             case (1, 2): sprite.imageKey = reader.readString()
@@ -416,14 +416,14 @@ public enum MovenSVGAParser {
             default: reader.skip(wire: tag.wire)
             }
         }
-        guard !reader.isInvalid else { throw MovenSVGAError.invalidMovie }
+        guard !reader.isInvalid else { throw LspAgSVGAError.invalidMovie }
         return sprite
     }
 
     /// 解析单帧布局、变换、裁剪和形状。内层解析抛错时向上传播，不返回半成品帧。
-    private static func parseFrame(_ data: Data) throws -> MovenSVGAFrame {
-        var frame = MovenSVGAFrame()
-        var reader = MovenProtoReader(data)
+    private static func parseFrame(_ data: Data) throws -> LspAgSVGAFrame {
+        var frame = LspAgSVGAFrame()
+        var reader = LspAgProtoReader(data)
         while let tag = reader.nextTag() {
             switch (tag.field, tag.wire) {
             case (1, 5): frame.alpha = reader.readFloat()
@@ -434,14 +434,14 @@ public enum MovenSVGAParser {
             default: reader.skip(wire: tag.wire)
             }
         }
-        guard !reader.isInvalid else { throw MovenSVGAError.invalidMovie }
+        guard !reader.isInvalid else { throw LspAgSVGAError.invalidMovie }
         return frame
     }
 
     /// 固定字段号与 schema 一一对应；即使当前 painter 不使用 x / y，也保留原始字段。
-    private static func parseLayout(_ data: Data) throws -> MovenSVGALayout {
-        var layout = MovenSVGALayout()
-        var reader = MovenProtoReader(data)
+    private static func parseLayout(_ data: Data) throws -> LspAgSVGALayout {
+        var layout = LspAgSVGALayout()
+        var reader = LspAgProtoReader(data)
         while let tag = reader.nextTag() {
             switch (tag.field, tag.wire) {
             case (1, 5): layout.x = reader.readFloat()
@@ -451,14 +451,14 @@ public enum MovenSVGAParser {
             default: reader.skip(wire: tag.wire)
             }
         }
-        guard !reader.isInvalid else { throw MovenSVGAError.invalidMovie }
+        guard !reader.isInvalid else { throw LspAgSVGAError.invalidMovie }
         return layout
     }
 
     /// 读取二维矩阵，不在解析阶段预先变换几何，方便每帧组合 frame / shape 两级变换。
-    private static func parseTransform(_ data: Data) throws -> MovenSVGATransform {
-        var transform = MovenSVGATransform()
-        var reader = MovenProtoReader(data)
+    private static func parseTransform(_ data: Data) throws -> LspAgSVGATransform {
+        var transform = LspAgSVGATransform()
+        var reader = LspAgProtoReader(data)
         while let tag = reader.nextTag() {
             switch (tag.field, tag.wire) {
             case (1, 5): transform.a = reader.readFloat()
@@ -470,29 +470,29 @@ public enum MovenSVGAParser {
             default: reader.skip(wire: tag.wire)
             }
         }
-        guard !reader.isInvalid else { throw MovenSVGAError.invalidMovie }
+        guard !reader.isInvalid else { throw LspAgSVGAError.invalidMovie }
         return transform
     }
 
     /// ShapeEntity 的 oneof 分支：路径字符串、圆角矩形或椭圆，外加样式和局部变换。
     /// type == 3 最后统一改为 KEEP；这种标记随后由 inheritingKeepShapes 处理。
-    private static func parseShape(_ data: Data) throws -> MovenSVGAShape {
-        var shape = MovenSVGAShape()
-        var reader = MovenProtoReader(data)
+    private static func parseShape(_ data: Data) throws -> LspAgSVGAShape {
+        var shape = LspAgSVGAShape()
+        var reader = LspAgProtoReader(data)
         var type: Int = 0
         while let tag = reader.nextTag() {
             switch (tag.field, tag.wire) {
             case (1, 0): type = reader.readInt()
             case (2, 2):
                 // ShapeArgs { string d = 1; }
-                var args = MovenProtoReader(reader.readBytes())
+                var args = LspAgProtoReader(reader.readBytes())
                 while let sub = args.nextTag() {
                     if sub.field == 1, sub.wire == 2 { shape.kind = .path(args.readString()) }
                     else { args.skip(wire: sub.wire) }
                 }
-                guard !args.isInvalid else { throw MovenSVGAError.invalidMovie }
+                guard !args.isInvalid else { throw LspAgSVGAError.invalidMovie }
             case (3, 2):
-                var args = MovenProtoReader(reader.readBytes())
+                var args = LspAgProtoReader(reader.readBytes())
                 var x = 0.0, y = 0.0, w = 0.0, h = 0.0, r = 0.0
                 while let sub = args.nextTag() {
                     switch (sub.field, sub.wire) {
@@ -504,10 +504,10 @@ public enum MovenSVGAParser {
                     default: args.skip(wire: sub.wire)
                     }
                 }
-                guard !args.isInvalid else { throw MovenSVGAError.invalidMovie }
+                guard !args.isInvalid else { throw LspAgSVGAError.invalidMovie }
                 shape.kind = .rect(x: x, y: y, width: w, height: h, cornerRadius: r)
             case (4, 2):
-                var args = MovenProtoReader(reader.readBytes())
+                var args = LspAgProtoReader(reader.readBytes())
                 var cx = 0.0, cy = 0.0, rx = 0.0, ry = 0.0
                 while let sub = args.nextTag() {
                     switch (sub.field, sub.wire) {
@@ -518,23 +518,23 @@ public enum MovenSVGAParser {
                     default: args.skip(wire: sub.wire)
                     }
                 }
-                guard !args.isInvalid else { throw MovenSVGAError.invalidMovie }
+                guard !args.isInvalid else { throw LspAgSVGAError.invalidMovie }
                 shape.kind = .ellipse(cx: cx, cy: cy, rx: rx, ry: ry)
             case (10, 2): shape.style = try parseStyle(reader.readBytes())
             case (11, 2): shape.transform = try parseTransform(reader.readBytes())
             default: reader.skip(wire: tag.wire)
             }
         }
-        guard !reader.isInvalid else { throw MovenSVGAError.invalidMovie }
+        guard !reader.isInvalid else { throw LspAgSVGAError.invalidMovie }
         // `type` 只用来区分 keep；其余类型已由 oneof 里的 args 决定。
         if type == 3 { shape.kind = .keep }
         return shape
     }
 
     /// 只读取当前 painter 支持的样式字段；未使用的线帽 / 连接等字段通过 skip 保持可继续解析。
-    private static func parseStyle(_ data: Data) throws -> MovenSVGAStyle {
-        var style = MovenSVGAStyle()
-        var reader = MovenProtoReader(data)
+    private static func parseStyle(_ data: Data) throws -> LspAgSVGAStyle {
+        var style = LspAgSVGAStyle()
+        var reader = LspAgProtoReader(data)
         while let tag = reader.nextTag() {
             switch (tag.field, tag.wire) {
             case (1, 2): style.fill = try parseColor(reader.readBytes())
@@ -547,14 +547,14 @@ public enum MovenSVGAParser {
             default: reader.skip(wire: tag.wire)
             }
         }
-        guard !reader.isInvalid else { throw MovenSVGAError.invalidMovie }
+        guard !reader.isInvalid else { throw LspAgSVGAError.invalidMovie }
         return style
     }
 
     /// 四个 fixed32 分量依次对应 RGBA。缺失分量沿用模型默认值，不在这里补成不透明色。
-    private static func parseColor(_ data: Data) throws -> MovenSVGAColor {
-        var color = MovenSVGAColor()
-        var reader = MovenProtoReader(data)
+    private static func parseColor(_ data: Data) throws -> LspAgSVGAColor {
+        var color = LspAgSVGAColor()
+        var reader = LspAgProtoReader(data)
         while let tag = reader.nextTag() {
             switch (tag.field, tag.wire) {
             case (1, 5): color.r = reader.readFloat()
@@ -564,16 +564,16 @@ public enum MovenSVGAParser {
             default: reader.skip(wire: tag.wire)
             }
         }
-        guard !reader.isInvalid else { throw MovenSVGAError.invalidMovie }
+        guard !reader.isInvalid else { throw LspAgSVGAError.invalidMovie }
         return color
     }
 
     /// `KEEP` 表示「沿用上一帧的形状」，对应 `_processShapeItems`。
     /// 具体沿用最近记录的非空形状列表：空帧跳过而不清空记录；只检查首个形状是否为 KEEP。
     /// 预处理后播放器无需每次绘制都回查历史帧；没有可继承列表的 KEEP 仍由绘制器跳过。
-    private static func inheritingKeepShapes(_ sprite: MovenSVGASprite) -> MovenSVGASprite {
+    private static func inheritingKeepShapes(_ sprite: LspAgSVGASprite) -> LspAgSVGASprite {
         var sprite = sprite
-        var lastShapes: [MovenSVGAShape] = []
+        var lastShapes: [LspAgSVGAShape] = []
         for index in sprite.frames.indices {
             let shapes = sprite.frames[index].shapes
             guard let first = shapes.first else { continue }
@@ -600,7 +600,7 @@ public enum MovenSVGAParser {
 
 /// SVG path data → `UIBezierPath`，覆盖 painter.dart 支持的 M/L/H/V/C/S/Q/T/Z 及其相对形式。
 /// 只负责几何，不把颜色、描边宽度或 CGContext 变换写进缓存；相同路径可被不同帧复用。
-enum MovenSVGAPath {
+enum LspAgSVGAPath {
     /// 路径解析开销不小（一条 path 字符串要切词 + 建曲线），缓存起来复用。
     /// 缓存字典的读写全部在 lock 内；保存 CGPath，避免把可变 UIBezierPath 作为共享缓存暴露。
     nonisolated(unsafe) private static var cache: [String: CGPath] = [:]
@@ -756,10 +756,10 @@ enum MovenSVGAPath {
 
 /// CADisplayLink 强持有 target；通过弱引用中转，避免未挂到窗口的播放器形成循环引用。
 @MainActor
-private final class MovenSVGADisplayTarget: NSObject {
+private final class LspAgSVGADisplayTarget: NSObject {
     /// link 保留本 target，但 target 不保留 UIView，避免 run loop -> link -> view 的循环。
-    weak var player: MovenSVGAPlayerView?
-    init(player: MovenSVGAPlayerView) { self.player = player }
+    weak var player: LspAgSVGAPlayerView?
+    init(player: LspAgSVGAPlayerView) { self.player = player }
     @objc func tick(_ link: CADisplayLink) {
         // 即使 UIView 从未进入窗口就被释放，下一次 tick 也能自行注销遗留 link。
         guard let player else { link.invalidate(); return }
@@ -771,9 +771,9 @@ private final class MovenSVGADisplayTarget: NSObject {
 ///
 /// 用 `CADisplayLink` 按 fps 推进帧号，`draw(_:)` 里按 painter.dart 的顺序
 /// 画：viewBox 缩放 → sprite transform → clip → 图片 → 形状。
-public final class MovenSVGAPlayerView: UIView {
+public final class LspAgSVGAPlayerView: UIView {
     /// 更换资源时先停止旧 display link，再重置帧和清屏状态，防止旧动画继续驱动新资源。
-    public var movie: MovenSVGAMovie? {
+    public var movie: LspAgSVGAMovie? {
         didSet {
             stop()
             currentFrame = 0
@@ -847,7 +847,7 @@ public final class MovenSVGAPlayerView: UIView {
         currentFrame = 0
         startTimestamp = CACurrentMediaTime()
         displayLink?.invalidate()
-        let link = CADisplayLink(target: MovenSVGADisplayTarget(player: self), selector: #selector(MovenSVGADisplayTarget.tick(_:)))
+        let link = CADisplayLink(target: LspAgSVGADisplayTarget(player: self), selector: #selector(LspAgSVGADisplayTarget.tick(_:)))
         // 使用 common mode，使滚动等主线程交互模式下仍能驱动动画。
         link.add(to: .main, forMode: .common)
         displayLink = link
@@ -928,7 +928,7 @@ public final class MovenSVGAPlayerView: UIView {
             }
             if !frame.clipPath.isEmpty {
                 // 裁剪路径处于帧的局部坐标系，且同时作用于后面的位图与形状。
-                context.addPath(MovenSVGAPath.path(frame.clipPath).cgPath)
+                context.addPath(LspAgSVGAPath.path(frame.clipPath).cgPath)
                 context.clip()
             }
 
@@ -946,11 +946,11 @@ public final class MovenSVGAPlayerView: UIView {
     }
 
     /// 先建立局部几何，再叠加 shape transform；填充与描边共用路径，但分开提交 CGContext。
-    private func draw(_ shape: MovenSVGAShape, frameAlpha: Double, in context: CGContext) {
+    private func draw(_ shape: LspAgSVGAShape, frameAlpha: Double, in context: CGContext) {
         let path: UIBezierPath
         switch shape.kind {
         case .path(let d):
-            path = MovenSVGAPath.path(d)
+            path = LspAgSVGAPath.path(d)
         case .rect(let x, let y, let width, let height, let cornerRadius):
             path = UIBezierPath(roundedRect: CGRect(x: x, y: y, width: width, height: height), cornerRadius: cornerRadius)
         case .ellipse(let cx, let cy, let rx, let ry):
@@ -972,7 +972,7 @@ public final class MovenSVGAPlayerView: UIView {
         }
         if shape.style.strokeWidth > 0 {
             // 未显式提供描边颜色时沿用当前实现的黑色不透明默认值，再乘 frameAlpha。
-            let stroke = shape.style.stroke ?? MovenSVGAColor(r: 0, g: 0, b: 0, a: 1)
+            let stroke = shape.style.stroke ?? LspAgSVGAColor(r: 0, g: 0, b: 0, a: 1)
             context.setStrokeColor(stroke.uiColor(frameAlpha: frameAlpha).cgColor)
             context.setLineWidth(shape.style.strokeWidth)
             if shape.style.miterLimit > 0 { context.setMiterLimit(shape.style.miterLimit) }

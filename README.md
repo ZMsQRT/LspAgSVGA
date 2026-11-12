@@ -2,10 +2,10 @@
 
 SVGA 2.x decoding and UIKit animation playback for iOS 17 and later. The library has no network or cache policy; callers provide the animation data and own resource loading and caching.
 
-After publication to CocoaPods Trunk:
+Install the tagged GitHub release:
 
 ```ruby
-pod 'LspAgSVGA', '0.1.0'
+pod 'LspAgSVGA', :git => 'https://github.com/ZMsQRT/LspAgSVGA.git', :tag => '0.2.0'
 ```
 
 ## Usage
@@ -17,9 +17,9 @@ import LspAgSVGA
 import UIKit
 
 @MainActor
-func showAnimation(data: Data, in player: MovenSVGAPlayerView) async throws {
+func showAnimation(data: Data, in player: LspAgSVGAPlayerView) async throws {
     let decoder = Task.detached(priority: .userInitiated) {
-        try MovenSVGAParser.decode(data)
+        try LspAgSVGAParser.decode(data)
     }
     let movie = try await decoder.value
     player.movie = movie

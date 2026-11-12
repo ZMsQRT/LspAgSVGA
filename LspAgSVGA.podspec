@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'LspAgSVGA'
-  s.version          = '0.1.0'
+  s.version          = '0.2.0'
   s.summary          = 'SVGA 2.x decoding and UIKit playback for iOS.'
   s.homepage         = 'https://github.com/ZMsQRT/LspAgSVGA'
   s.license          = { :type => 'Proprietary', :text => 'Copyright Moven. All rights reserved.' }

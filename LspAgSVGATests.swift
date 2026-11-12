@@ -9,7 +9,7 @@ final class LspAgSVGATests: XCTestCase {
     func testStandardZlibMovieAndLegacyRawDeflateBothDecode() throws {
         let payload = movieData()
         for encoded in [try compressed(payload), try rawCompressed(payload)] {
-            let movie = try MovenSVGAParser.decode(encoded)
+            let movie = try LspAgSVGAParser.decode(encoded)
             XCTAssertEqual(movie.params.frames, 4)
             XCTAssertEqual(movie.params.viewBoxWidth, 100)
         }
@@ -17,8 +17,8 @@ final class LspAgSVGATests: XCTestCase {
 
     func testInflateDoesNotReturnOnlyTheFirstOutputBuffer() throws {
         let original = Data(repeating: 65, count: 300_000)
-        XCTAssertEqual(try MovenSVGAParser.inflate(compressed(original)), original)
-        XCTAssertEqual(try MovenSVGAParser.inflate(rawCompressed(original)), original)
+        XCTAssertEqual(try LspAgSVGAParser.inflate(compressed(original)), original)
+        XCTAssertEqual(try LspAgSVGAParser.inflate(rawCompressed(original)), original)
     }
 
     func testTruncatedStreamsAndWrongChecksumAreRejected() throws {
@@ -26,13 +26,13 @@ final class LspAgSVGATests: XCTestCase {
         let wrapped = try compressed(original)
         var badChecksum = wrapped
         badChecksum[badChecksum.count - 1] ^= 1
-        XCTAssertThrowsError(try MovenSVGAParser.inflate(badChecksum))
-        XCTAssertThrowsError(try MovenSVGAParser.inflate(Data(wrapped.dropLast(2))))
-        XCTAssertThrowsError(try MovenSVGAParser.inflate(Data(rawCompressed(original).dropLast())))
+        XCTAssertThrowsError(try LspAgSVGAParser.inflate(badChecksum))
+        XCTAssertThrowsError(try LspAgSVGAParser.inflate(Data(wrapped.dropLast(2))))
+        XCTAssertThrowsError(try LspAgSVGAParser.inflate(Data(rawCompressed(original).dropLast())))
     }
 
     func testEmptyLengthDelimitedValueDoesNotConsumeTheNextField() {
-        var reader = MovenProtoReader(Data([0x0A, 0, 0x10, 7]))
+        var reader = LspAgProtoReader(Data([0x0A, 0, 0x10, 7]))
         XCTAssertEqual(reader.nextTag()?.field, 1)
         XCTAssertEqual(reader.readString(), "")
         XCTAssertEqual(reader.nextTag()?.field, 2)
@@ -42,32 +42,32 @@ final class LspAgSVGATests: XCTestCase {
 
     func testMalformedVarintsAndHugeLengthsFailWithoutIntegerTrap() {
         for bytes in [[UInt8](repeating: 0xFF, count: 10), [0x80], [0xFF, 0xFF]] {
-            var reader = MovenProtoReader(Data(bytes))
+            var reader = LspAgProtoReader(Data(bytes))
             _ = reader.readVarint()
             XCTAssertTrue(reader.isInvalid)
         }
-        var reader = MovenProtoReader(Data(varint(UInt64.max)))
+        var reader = LspAgProtoReader(Data(varint(UInt64.max)))
         XCTAssertTrue(reader.readBytes().isEmpty)
         XCTAssertTrue(reader.isInvalid)
     }
 
     func testNestedMalformedMessageAndNonfiniteDimensionsAreRejected() throws {
         let malformed = field(2, [0x0A, 0xFF])
-        XCTAssertThrowsError(try MovenSVGAParser.decode(compressed(Data(malformed))))
+        XCTAssertThrowsError(try LspAgSVGAParser.decode(compressed(Data(malformed))))
         let params = float(1, .nan) + float(2, 100) + integer(4, 4)
-        XCTAssertThrowsError(try MovenSVGAParser.decode(compressed(Data(field(2, params)))))
+        XCTAssertThrowsError(try LspAgSVGAParser.decode(compressed(Data(field(2, params)))))
         let excessiveFrames = float(1, 100) + float(2, 100) + integer(4, UInt64.max)
-        XCTAssertThrowsError(try MovenSVGAParser.decode(compressed(Data(field(2, excessiveFrames)))))
+        XCTAssertThrowsError(try LspAgSVGAParser.decode(compressed(Data(field(2, excessiveFrames)))))
     }
 
     func testUnplayableMovieParametersAreRejected() throws {
         for params in [float(1, 100) + float(2, 100), integer(4, 4)] {
-            XCTAssertThrowsError(try MovenSVGAParser.decode(compressed(Data(field(2, params)))))
+            XCTAssertThrowsError(try LspAgSVGAParser.decode(compressed(Data(field(2, params)))))
         }
     }
 
     func testClosedPathIncludesClosureAndRelativeMoveStartsAtSubpathOrigin() {
-        let path = MovenSVGAPath.path("M10 10 L20 10 L20 20 Z m5 0 l0 5")
+        let path = LspAgSVGAPath.path("M10 10 L20 10 L20 20 Z m5 0 l0 5")
         var types: [CGPathElementType] = []
         path.cgPath.applyWithBlock { types.append($0.pointee.type) }
         XCTAssertTrue(types.contains(.closeSubpath))
@@ -75,7 +75,7 @@ final class LspAgSVGATests: XCTestCase {
     }
 
     func testRepeatedCoordinatesAndImplicitLinesAreRendered() {
-        let path = MovenSVGAPath.path("M0 0 10 0 10 20 L0 20 0 0 Z")
+        let path = LspAgSVGAPath.path("M0 0 10 0 10 20 L0 20 0 0 Z")
         XCTAssertEqual(path.bounds, CGRect(x: 0, y: 0, width: 10, height: 20))
         var lineCount = 0
         path.cgPath.applyWithBlock { if $0.pointee.type == .addLineToPoint { lineCount += 1 } }
@@ -83,14 +83,14 @@ final class LspAgSVGATests: XCTestCase {
     }
 
     func testPathScientificNotationAndAdjacentSignedNumbers() {
-        let path = MovenSVGAPath.path("M1e1-2E1 L+30 +4e1 L.5.5")
+        let path = LspAgSVGAPath.path("M1e1-2E1 L+30 +4e1 L.5.5")
         XCTAssertEqual(path.bounds.minY, -20, accuracy: 0.001)
         XCTAssertEqual(path.bounds.maxX, 30, accuracy: 0.001)
         XCTAssertEqual(path.currentPoint, CGPoint(x: 0.5, y: 0.5))
     }
 
     func testSmoothCurveAfterHorizontalLineDoesNotReflectOldControl() {
-        let path = MovenSVGAPath.path("M0 0 C1 1 2 2 3 3 H10 S20 20 30 30")
+        let path = LspAgSVGAPath.path("M0 0 C1 1 2 2 3 3 H10 S20 20 30 30")
         var firstControl = CGPoint.zero
         path.cgPath.applyWithBlock {
             if $0.pointee.type == .addCurveToPoint { firstControl = $0.pointee.points[0] }
@@ -100,9 +100,9 @@ final class LspAgSVGATests: XCTestCase {
 
     func testPathCacheDoesNotExposeMutableSharedPath() {
         let data = "M0 0 L11 0 L11 19 Z"
-        let first = MovenSVGAPath.path(data)
+        let first = LspAgSVGAPath.path(data)
         first.removeAllPoints()
-        XCTAssertEqual(MovenSVGAPath.path(data).bounds, CGRect(x: 0, y: 0, width: 11, height: 19))
+        XCTAssertEqual(LspAgSVGAPath.path(data).bounds, CGRect(x: 0, y: 0, width: 11, height: 19))
     }
 
     private func movieData() -> Data {
